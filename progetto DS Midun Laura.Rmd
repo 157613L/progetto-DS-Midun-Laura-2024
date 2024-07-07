@@ -1,0 +1,540 @@
+---
+title: "Progetto DS Midun Laura"
+author: "Laura Midun"
+date: "2024-07-07"
+output: html_document
+---
+
+Questo progetto ha lo scopo di rappresentare graficamente l'andamento che ha subito il fatturato italiano per l'esportazione di prodotti nel mondo, tra il 1994 e il 2021.
+
+
+```{r, message = FALSE, warning=FALSE}
+#LIBRERIE UTILIZZATE
+
+library(readxl)   #read_excel
+library(tidyr)
+library (dplyr)
+library(ggplot2)
+library(graphics)     
+library(modelr)
+library(purrr)
+library(tibble)
+library(reshape2) #melt
+```
+
+
+
+
+
+Inizialmente è necessario importare il dataset attraverso il comando **read_excel** contenuto nella libreria **readlx** e poi gli si assegna una nuova variabile.
+
+```{r}
+setwd("C:/Users/laura/Desktop/progetto data science 2024")
+
+export <- read_excel("Export (US$ thousand) 1994-2021.xlsx")
+animals <- read_excel("WITS_animal_product_2021.xlsx")
+consumer_goods <- read_excel("WITS_consumer_goods_2021.xlsx")
+fuels <- read_excel("WITS_fuels_2021.xlsx")
+metals <- read_excel("WITS_ores_metals_2021.xlsx")
+raw_materials <- read_excel("WITS_raw_materials_2021.xlsx")
+textiles <- read_excel("WITS_textiles_clothing_2021.xlsx")
+```
+
+
+
+
+
+Il dataset, inoltre, deve essere modificato in modo che si possano avere soltanto i dati che più interessano per la creazione dei grafici.
+Quindi, attravarso **select** (dplyr) vengono selezionate le colonne e con **pivot_longer** (tidyr) le colonne preesistenti vengono convertite in righe.
+
+```{r}
+dataset_list <- list(export, animals, consumer_goods, fuels, metals, raw_materials, textiles)
+
+dataset_list <- tibble(dataset_list)
+
+
+dl <- lapply(dataset_list[[1]], function(dataset) {
+                               colnames(dataset) <- c("Reporter_Name", "Partner_Name", "Trade_Flow", "Product_Group", "Indicator", as.character(1994:2021))
+                               dataset <- select(dataset, Reporter_Name, Partner_Name, as.character(1994:2021))
+                               dataset <- pivot_longer(dataset, 
+                                                        cols = as.character(1994:2021), 
+                                                        names_to = "Year", 
+                                                        values_to = "Export")
+                               return(dataset)
+})
+
+
+
+
+
+#rinomino l'ultima colonna di ogni dataset con il rispettivo prodotto di riferimento
+
+export <- rename(dl[[1]], Total_Export = Export)
+animals <- rename(dl[[2]], Animals = Export)
+consumer_goods <- rename(dl[[3]], Consumer_Goods = Export)
+fuels <- rename(dl[[4]], Fuels = Export)
+metals <- rename(dl[[5]], Metals = Export)
+raw_materials <- rename(dl[[6]], Raw_Materials = Export)
+textiles <- rename(dl[[7]], Textiles = Export)
+
+
+
+#unisco tutti e 7 i dataset insieme
+
+prodotti <- merge(export, animals)
+prodotti <- merge(prodotti, consumer_goods)
+prodotti <- merge(prodotti, fuels)
+prodotti <- merge(prodotti, metals)
+prodotti <- merge(prodotti, raw_materials)
+prodotti <- merge(prodotti, textiles)
+```
+
+
+
+
+
+È necessario creare un dataset per ogni continente, assegnando a ciascun Stato il relativo continente di appartenenza. 
+
+```{r}
+#EUROPA 
+europa <- filter(prodotti, Partner_Name %in% c("Germany", "France", "Spain", "United Kingdom", "Netherlands"))
+
+europa <- add_column(europa, Continent = "Europe", .after = 1)
+
+
+
+#AMERICA
+america <- filter(prodotti, Partner_Name %in% c("United States", "Canada", "Mexico", "Brazil", "Argentina"))
+
+america <- add_column(america, Continent = "America", .after = 1)
+
+
+
+#ASIA
+asia <- filter(prodotti, Partner_Name %in% c("China", "Japan", "India", "Saudi Arabia", "Israel"))
+  
+asia <- add_column(asia, Continent = "Asia", .after = 1)
+
+
+
+#AFRICA
+africa <- filter(prodotti, Partner_Name %in% c("South Africa", "Egypt, Arab Rep.", "Algeria", "Morocco", "Tunisia"))
+
+africa <- add_column(africa, Continent = "Africa", .after = 1)
+
+
+
+#OCEANIA
+oceania <- filter(prodotti, Partner_Name %in% c("Australia", "New Zealand"))
+
+oceania <- add_column(oceania, Continent = "Oceania", .after = 1)
+```
+
+
+
+
+
+Unisco i cinque dataset dei continenti appena creati in un unico dataset e lo ordino alfabeticamente. 
+
+```{r}
+#unisco i dataset dei 5 continenti insieme
+prodotti_esp <- rbind(europa, america, asia, africa, oceania)
+
+#metto i nomi degli Stati in ordine alfabetico
+prodotti_esp <- arrange(prodotti_esp, group.by = Partner_Name)
+```
+
+
+
+
+
+Ora è possibile rappresentare graficamente l'andamento generale delle esportazioni italiane, dove ogni riga rappresenta un Paese importatore. 
+In questo modo, dal grafico riportato di seguito, è possibile notare un andamento non regolare nel tempo e non simile per tutti gli Stati presi in considerazione.  
+Questa rappresentazione grafica non aiuta, però, a capire chiaramente nel dettaglio come la situazione si è sviluppata nel corso degli anni. 
+
+```{r, message = FALSE, warning = FALSE}
+ggplot(prodotti_esp, aes(x = as.numeric(Year), y = as.numeric(sub(",", ".", Total_Export, fixed = TRUE)))) +
+  geom_line(aes(group = Partner_Name), alpha = 1) +
+  theme_classic() +
+  scale_x_continuous(breaks = c(1995, 2000, 2005, 2010, 2015, 2020),
+                     limits = c(1994, 2021)) +
+  scale_y_continuous(labels = scales::comma) +
+  labs(title = "Esportazioni dall'Italia al resto del mondo dal 1994 al 2021",
+       x = "\n Anni", y = "Esportazioni (US$) \n") +
+  theme_minimal(base_size = 20)
+```
+
+
+
+
+
+Analizzando l'andamento generale delle esportazioni italiane, si osserva una crescita costante dai primi anni 2000 fino al 2008, seguita da un brusco calo nel 2009, probabilmente attribuibile alla crisi finanziaria del 2008. Si registra un lieve calo anche nel 2015 e nel 2020, seguito da una ripresa nel 2021. 
+
+```{r, warning = FALSE}
+#somma delle esportazioni totali per ogni anno
+
+totale_anni <- prodotti_esp %>%
+  group_by(Year) %>%
+  summarise(Total_Export = sum(Total_Export))
+
+totale_anni$Year <- as.numeric(totale_anni$Year)
+
+
+ggplot(totale_anni, aes(x = Year, y = Total_Export)) +
+  geom_line(color = "blue", alpha = 0.5, size = 1.5) +
+  geom_point(size = 2.5) +
+  scale_x_continuous(breaks = c(1995, 2000, 2005, 2010, 2015, 2020),
+                     limits = c(1994, 2021)) +
+  scale_y_continuous(breaks = c(1e+08, 2e+08, 3e+08, 4e+08),
+                       limits = c(1e+08, 4e+08),
+                       labels = scales::comma) +  #per cambiare il formato dei numeri nell'asse y
+  labs(title = "Andamento delle esportazioni totali italiane tra il 1994 e il 2021", 
+       x = "\n Anno", y = "Esportazioni (US$) \n") + 
+  theme_minimal(base_size = 20)
+```
+
+
+
+
+
+Il seguente grafico a barre mostra le esportazioni totali dei prodotti italiani nei cinque continenti. I dati indicano che l'Europa è di gran lunga il principale mercato di esportazione per l'Italia, con un valore che supera i 4 miliardi di dollari. Seguono l'America e l'Asia con esportazioni rispettivamente di quasi 1,5 miliardi e poco meno di 1 miliardo di dollari. Verso l'Africa vengono registrate esportazioni per poco meno di 500 milioni di dollari, mentre l'Oceania è il continente con le esportazioni italiane più basse, appena sopra i 100 milioni di dollari. 
+
+```{r, warning = FALSE}
+#somma delle esportazioni di tutti gli anni presi in considerazione (dal 1994 al 2021)
+
+ggplot(prodotti_esp, aes(x = Continent, y = Total_Export, fill = Continent)) +
+  geom_bar(stat = "identity") +
+  scale_x_discrete(labels = c("Africa", "America", "Asia", "Europa", "Oceania")) +
+  scale_y_continuous(breaks = c(0, 1e+09, 2e+09, 3e+09, 4e+09),
+                     limits = c(0, 4.3e+09),
+                     labels = scales::comma) +
+  labs(title = "Esportazioni totali dei prodotti italiani nei 5 continenti", 
+       x = "\n Continente", y = "Esportazioni (US$) \n") +
+  theme_minimal(base_size = 20) +
+  theme(legend.position = "none")
+```
+
+
+
+
+
+Il seguente grafico mostra l'andamento delle esportazioni dei prodotti italiani per continente dal 1994 al 2021. Le esportazioni sono espresse in dollari americani e sono rappresentate su una scala logaritmica. 
+
+L'Europa rimane il principale mercato di esportazione con un trend di crescita costante nel tempo e con valori significativamente più alti rispetto agli altri continenti.
+L'america, mostra un incremento graduale delle esportazioni italiane, suggerendo che il mercato americano è diventato sempre più rilevante per l'Italia nel corso degli anni.
+Le esportazioni verso l'Asia hanno avuto una crescita continua seppur con qualche fluttuazione. 
+Mentre l'Africa e l'Oceania, pur mostrando incrementi, rimangono i mercati con volumi di esportazione più contenuti.
+
+```{r, warning = FALSE} 
+#(fare la somma per ogni anno (dal 1994 al 2021), per ciascuno dei 5 continenti) 
+
+totale_continente_anno <- prodotti_esp %>%
+  group_by(Continent, Year) %>%
+  summarise(Total_Export = sum(Total_Export), .groups = "drop") #.groups = "drop" --> garantisce che il dataframe risultante non mantenga la struttura di raggruppamento, che potrebbe causare problemi in seguito
+
+totale_continente_anno$Year <- as.numeric(totale_continente_anno$Year)
+
+ggplot(totale_continente_anno, aes(x = Year, y = Total_Export, color = Continent)) +
+  geom_line(aes(group = Continent), alpha = 0.5, size = 1.5) +
+  geom_point(size = 2.5) +
+  scale_x_continuous(breaks = c(1995, 2000, 2005, 2010, 2015, 2020)) +
+  scale_y_log10(breaks = c(1e+06, 1e+07, 1e+08),
+                limits = c(1e+06, 3e+08),
+                labels = scales::comma) +
+  labs(title = "Esportazioni dei prodotti italiani per continente tra il 1994 e il 2021",
+       x = "\n Anno", y = "Esportazioni (US$) \n",
+       color = "Continenti") +
+  scale_color_discrete(labels = c("Africa", "America", "Asia", "Europa", "Oceania")) +
+  theme_minimal(base_size = 20)   #grandezza del font
+```
+
+
+
+
+
+Dopo aver osservato che l'Europa è il principale destinatario delle esportazioni italiane, esaminiamo alcuni dei settori coinvolti. 
+
+Attraverso un grafico a barre, analizziamo le esportazioni per ciascun settore in ogni continente. Come evidenziato in precedenza, l'Europa risulta essere il maggiore importatore di prodotti italiani in quasi tutti i settori considerati. 
+
+```{r, warning = FALSE}
+totale_continenti_settori1 <- aggregate(cbind(Animals, Consumer_Goods, Fuels, Metals, Raw_Materials, Textiles) ~ Continent, data = prodotti_esp, sum)
+
+# Trasforma i dati in formato lungo per ggplot2
+totale_continenti_settori2 <- melt(totale_continenti_settori1, 
+                  id.vars = 'Continent', 
+                  variable.name = 'Settore', 
+                  value.name = 'Esportazioni')
+
+
+ggplot(totale_continenti_settori2, aes(x = Settore, y = Esportazioni, fill = Continent)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_x_discrete(labels = c("Animali", "Beni di consumo", "Carburanti", "Metalli", "Materie prime", "Tessile")) +
+  scale_y_continuous(breaks = c(0, 1e+08, 5e+08, 1e+09, 1.5e+09),
+                     labels = scales::comma) +
+  labs(title = "Esportazioni italiane per settore verso ogni continente",
+       x = "\n Settore", y = "Esportazioni (US$) \n",
+       fill = "Continente") +
+  scale_fill_discrete(labels = c("Africa", "America", "Asia", "Europa", "Oceania")) +
+  theme_minimal(base_size = 20)
+```
+
+
+
+
+
+Analizzando il continente europeo si osserva che la Germania è il principale partner commerciale, con un trend in crescita. Anche la Francia mostra un aumento costante, mentre i Paesi Bassi e il Regno Unito seguono con valori inferiori e variazioni minori. Si nota, inoltre, che nell'andamento della Germania, Francia e Spagna c'è un calo evidente nel 2009.   
+
+```{r, warning = FALSE}
+ggplot(europa, aes(x = as.numeric(Year), y = as.numeric(sub(",", ".", Total_Export, fixed = TRUE)), color = Partner_Name)) +
+  geom_line(aes(group = Partner_Name), alpha = 0.5, size = 1.5) +
+  geom_point(size = 2.5) +
+  theme_classic() + 
+  scale_x_continuous(breaks = c(1995, 2000, 2005, 2010, 2015, 2020),
+                     limits = c(1994, 2021)) +
+  scale_y_continuous(breaks = c(0, 1e+07, 3e+07, 5e+07, 7e+07, 9e+07),
+                     limits = c(0,9e+07),
+                     labels = scales::comma) +
+  labs(title = "Esportazioni italiane verso i principali Paesi europei tra il 1994 e il 2021",
+       x = "\n Anno", y = "Esprotazioni (US$) \n",
+       color = "Stato europeo") +
+  scale_color_manual(values = c("#0000FF", "#1E90FF", "#00BFFF", "#87CEEB", "#4682B4"),
+                     labels = c("Francia", "Germania", "Paesi Bassi", "Spagna", "Regno Unito")) +
+  theme_minimal(base_size = 20)
+```
+
+
+
+
+
+Si analizzano ora le esportazioni verso i principali Paesi europei, mantenendo la considerazione sempre sugli stessi settori. 
+I beni di consumo rappresentano la categoria principale in tutti i Paesi, con la Germania al vertice. Anche le esportazioni di metalli e materie prime sono abbastanza significative, speciamente verso Germania e Francia. Gli altri settori hanno un peso minore, con variazioni tra i diversi Paesi. 
+
+```{r, warning = FALSE}
+#GRAFICO CHE RAPPRESENTA IL TOTALE DI OGNI SETTORE PER OGNI PAESE EUROPEO
+
+# Calcola il totale per ogni settore per ciascun Paese
+totale_settori_statieur <- europa %>%
+  group_by(Partner_Name) %>%
+  summarise(
+    Total_Animals = sum(Animals, na.rm = TRUE),
+    Total_Consumer_Goods = sum(Consumer_Goods, na.rm = TRUE),
+    Total_Fuels = sum(Fuels, na.rm = TRUE),
+    Total_Metals = sum(Metals, na.rm = TRUE),
+    Total_Raw_Materials = sum(Raw_Materials, na.rm = TRUE),
+    Total_Textiles = sum(Textiles, na.rm = TRUE)
+  )
+
+# Trasforma i dati in un formato lungo
+long_data <- totale_settori_statieur %>%
+  pivot_longer(
+    cols = starts_with("Total_"),
+    names_to = "Sector",
+    values_to = "Total"
+  )
+
+
+ggplot(long_data, aes(x = Partner_Name, y = Total, fill = Sector)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_x_discrete(labels = c("Francia", "Germania", "Paesi Bassi", "Spagna", "Regno Unito")) +
+  scale_y_continuous(breaks = c(0, 1e+08, 3e+08, 5e+08, 7e+08),
+                     limits = c(0, 7e+08),
+                     labels = scales::comma) +
+  labs(title = "Esportazioni italiane per settore nei principali Paesi europei",
+       x = "\n Stato", y = "Esportazioni (US$) \n",
+       fill = "Settore") +
+  scale_fill_manual(values = c("#2ca02c", "#1f77b4", "#d62728", "#7f7f7f", "#663333", "#9467bd"),
+                    labels = c("Animali", "Beni di consumo", "Carburanti", "Metalli", "Materie prime", "Tessile")) +
+  theme_minimal(base_size = 20) 
+```
+
+
+
+
+
+Analizzando l'America, il secondo continente più importante per quanto riguarda le esportazioni italiane, si nota che gli Stati Uniti rappresentano il principale mercato per l'esportazione di prodotti italiani, con un trend in crescita continua. Brasile, Canada e Messico mostrano andamenti simili e moderati. L'Argentina ha avuto un calo significatico nei primi anni 2000, seguito da una lenta ripresa. 
+
+```{r}
+ggplot(america, aes(x = as.numeric(Year), y = as.numeric(sub(",", ".", Total_Export, fixed = TRUE)), color = Partner_Name)) +
+  geom_line(aes(group = Partner_Name), alpha = 0.5, size = 1.5) +
+  geom_point(size = 2.5) +
+  scale_x_continuous(breaks = c(1995, 2000, 2005, 2010, 2015, 2020),
+                     limits = c(1994, 2021)) +
+  scale_y_log10(labels = scales::comma) +
+  labs(title = "Esportazioni italiane verso i principali Paesi d'America tra il 1994 e il 2021",
+       x = "\n Anno", y = "Esportazioni (US$) \n",
+       color = "Stato americano") +
+  scale_color_manual(values = c("#666600",
+  "#999900",
+  "#CCCC00",  
+  "#FFCC33",  
+  "#FF9900"),
+                     labels = c("Argentina", "Brasile", "Canada", "Messico", "Stati Uniti")) +
+  theme_minimal(base_size = 20)
+```
+
+
+
+
+
+Considerando i settori di esportazione e gli stati americani esaminati, si osserva che gli Stati Uniti sono il principale mercato per i beni di consumo e materie prime, seguiti da Brasile e Canada. Il settore dei metalli è particolarmente rilevante in Brasile e negli Stati Uniti. In tutti i Paesi, le esportazioni di animali e dei prodotti appartenenti al settore tessile sono meno significative. 
+
+```{r, warning = FALSE}
+#GRAFICO CHE RAPPRESENTA IL TOTALE DI OGNI SETTORE PER OGNI PAESE EUROPEO
+
+# Calcola il totale per ogni settore per ciascun Paese
+totale_settori_statiamrc <- america %>%
+  group_by(Partner_Name) %>%
+  summarise(
+    Total_Animals = sum(Animals, na.rm = TRUE),
+    Total_Consumer_Goods = sum(Consumer_Goods, na.rm = TRUE),
+    Total_Fuels = sum(Fuels, na.rm = TRUE),
+    Total_Metals = sum(Metals, na.rm = TRUE),
+    Total_Raw_Materials = sum(Raw_Materials, na.rm = TRUE),
+    Total_Textiles = sum(Textiles, na.rm = TRUE)
+  )
+
+# Trasforma i dati in un formato lungo
+long_data_amrc <- totale_settori_statiamrc %>%
+  pivot_longer(
+    cols = starts_with("Total_"),
+    names_to = "Sector",
+    values_to = "Total"
+  )
+
+
+ggplot(long_data_amrc, aes(x = Partner_Name, y = Total, fill = Sector)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_x_discrete(labels = c("Argentina", "Brasile", "Canada", "Messico", "Stati Uniti")) +
+  scale_y_continuous(labels = scales::comma) +
+  labs(title = "Esportazioni italiane per settore nei principali Paesi d'America",
+       x = "\n Stato", y = "Esportazioni (US$) \n",
+       fill = "Settore") +
+  scale_fill_manual(values = c("#2ca02c", "#1f77b4", "#d62728", "#7f7f7f", "#663333", "#9467bd"),
+                    labels = c("Animali", "Beni di consumo", "Carburanti", "Metalli", "Materie prime", "Tessile")) +
+  theme_minimal(base_size = 20)
+```
+
+
+
+
+
+Il seguente grafico fornisce una chiara visualizzazione delle fluttuazioni annuali nelle esportazioni italiane verso i cinque continenti. L'impatto della crisi finanziaria del 2008 è evidente, con un calo significativo nel 2009 seguito da una graduale ripresa.
+
+```{r, warning = FALSE}
+totale_continenti_anni <- totale_continenti_anni %>%
+  group_by(Continent) %>%
+  arrange(Year) %>%
+  mutate(Annual_Change = (Total_Export - lag(Total_Export)) / lag(Total_Export) * 100)
+
+# Grafico a barre delle variazioni percentuali annuali
+ggplot(totale_continenti_anni, aes(x = Year, y = Annual_Change, fill = Continent)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_x_continuous(breaks = c(1995, 2000, 2005, 2010, 2015, 2020),
+                     limits = c(1994, 2021)) +
+  labs(title = "Variazione percentuale annuale delle esportazioni italiane per continente",
+       x = "\n Anno",
+       y = "Variazione Percentuale (%) \n",
+       fill = "Continente") +
+  scale_fill_discrete(labels = c("Africa", "America", "Asia", "Europa", "Oceania")) +
+  theme_minimal(base_size = 20)
+```
+
+
+
+
+
+Il seguente grafico a torta mostra la distribuzione percentuale delle esportazioni totali italiane suddivise per settore. Il grafico fornisce una chiara predominanza del settore dei beni di consumo, seguito dalle materie prime e dai carburanti. 
+
+```{r}
+settori <- c("Animals", "Consumer Goods", "Fuels", "Metals", "Raw Materials", "Textiles")
+
+#somma delle colonne per ogni settore
+somma_colonne <- colSums(prodotti_esp[,6:11], na.rm = TRUE)
+
+#calcolo delle percentuali
+percentuali <- round(somma_colonne / sum(somma_colonne) * 100, 2) #2 --> numerp di cifre decimali
+
+
+df <- data.frame(
+  settore = settori,
+  valore = somma_colonne,
+  percentuale = percentuali
+)
+
+#labels
+df <- df %>%
+  mutate(etichette = paste(percentuale, "%"))
+
+
+ggplot(df, aes(x = "", y = percentuale, fill = settore)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar("y") +
+  geom_text(aes(label = etichette), position = position_stack(vjust = 0.5)) +
+  labs(title = "Percentuale delle esportazioni totali italiane per settore") +
+  scale_fill_manual(values = c("#2ca02c", "#1f77b4", "#d62728", "#7f7f7f", "#663333", "#9467bd"),
+                    labels = c("Animali", "Beni di consumo", "Carburanti", "Metalli", "Materie prime", "Tessile")) +
+  theme_minimal(base_size = 20) +
+  theme(axis.title = element_blank(),  #element_blank --> rimuovere elementi grafici
+        axis.text = element_blank(),
+        panel.grid = element_blank(),
+        plot.title = element_text(hjust = 0.5))
+```
+
+
+
+
+
+Il seguente grafico mostra l'andamento delle esportazioni totali italiane per settore tra il 1994 e il 2021, rappresentate in scala logaritmica. 
+
+Il grafico evidenzia l'importanza del settore dei beni di consumo nelle esportazioni italiane e la resilienza di questo settore nonostante le crisi economiche. I settori delle materie prime, dei carburanti e dei metalli hanno subito notevoli variazioni nel 2009. Il settore tessile e degli animali, invece, mostrano leggere fluttuazioni nel corso degli anni. 
+In generale, tutti i settori hanno registrato una crescita nel tempo. 
+
+```{r, warning = FALSE}
+#QUALI SONO I PRODOTTI ITALIANI PIU' ESPORTATI NEL MONDO NEL CORSO DEGLI ANNI
+#per ogni settore calcolare la somma delle esportazioni per ogni anno
+
+settori <- c("Animals", "Consumer_Goods", "Fuels", "Metals", "Raw_Materials", "Textiles") 
+anni <- 1994:2021
+
+
+# Definisci una funzione per calcolare il totale per ogni settore e anno
+calcola_totale <- function(anno, settore) {
+  df <- subset(prodotti_esp, Year == anno)
+  somma <- sum(df[[settore]], na.rm = TRUE)
+}
+
+# Utilizza sapply per applicare la funzione a ogni combinazione di anno e settore
+totali_settori_anni <- sapply(settori, function(settore) {
+  sapply(anni, function(anno) {
+    calcola_totale(anno, settore)
+  })
+})
+
+
+# Converti la matrice risultante in un dataframe
+totali_settori_anni_df <- as.data.frame(totali_settori_anni)
+
+#aggiungo la colonna "Year" al dataframe creato
+totali_settori_anni_df <- totali_settori_anni_df %>%
+  mutate(Year = 1994:2021, .before = Animals)
+
+# Converti il dataframe in formato lungo
+totali_settori_anni_long <- totali_settori_anni_df %>%
+  pivot_longer(cols = -Year, names_to = "Settore", values_to = "Totale")
+
+
+ggplot(totali_settori_anni_long, aes(x = Year, y = Totale, color = Settore)) +
+  geom_line(alpha = 0.5, size = 1.5) +
+  geom_point(size = 2.5) +
+  scale_x_continuous(breaks = c(1995, 2000, 2005, 2010, 2015, 2020),
+                     limits = c(1994, 2021)) +
+  scale_y_log10(breaks = c(3e+06, 1e+07, 3e+07, 1e+08),  
+                limits = c(3e+06, 1.5e+08),
+                labels = scales::comma) +
+  labs(title = "Esportazioni italiane per settore tra il 1994 e il 2021", 
+       x = "\n Anno", y = "Esportazioni (US$) \n",
+       color = "Settore") + 
+  scale_color_manual(values = c("#2ca02c", "#1f77b4", "#d62728", "#7f7f7f", "#663333", "#9467bd"),
+                     labels = c("Animali", "Beni di consumo", "Carburanti", "Metalli", "Materie prime", "Tessile")) +
+  theme_minimal(base_size = 20)
+```
